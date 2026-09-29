@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "onomondo-sgp32-prototype"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.7,<3",
+  "httpx>=0.28,<1", "sqlalchemy>=2.0,<3", "alembic>=1.14,<2",
+  "psycopg[binary]>=3.2,<4", "argon2-cffi>=23,<26", "paho-mqtt>=2.1,<3",
+  "pyserial>=3.5,<4", "prometheus-client>=0.21,<1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1", "mypy>=1.15,<2", "pre-commit>=4,<5", "types-pyserial>=3.5"]
+
+[project.scripts]
+sgp32-worker = "sgp32.worker:main"
+sgp32-agent = "sgp32_agent.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/sgp32", "device-agent/sgp32_agent", "shared/sgp32_common"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["broker: real local Mosquitto TLS integration", "postgres: PostgreSQL concurrency and migration tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+ignore = ["S101", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "S603", "S607"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["backend", "device-agent", "shared"]
+check_untyped_defs = true
+disallow_untyped_defs = true
+warn_unused_ignores = true
