@@ -1,0 +1,70 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from deploy.local.mock_onomondo import EIDS, create_mock
+
+
+def test_local_mock_readonly_and_durable(tmp_path):
+    secret = tmp_path / "mock-secret"
+    secret.write_text("local-test-credential")
+    database = tmp_path / "mock.db"
+    app = create_mock(database, secret)
+    headers = {"Authorization": "Bearer local-test-credential"}
+    with TestClient(app) as api:
+        assert api.get("/api/euicc").status_code == 401
+        assert len(api.get("/api/euicc", headers=headers).json()["data"]) == 5
+        for operation in ("enable", "disable", "delete", "download"):
+            assert (
+                api.post(
+                    "/api/orders/psmo",
+                    headers=headers,
+                    json={
+                        "eidValue": EIDS[0],
+                        "order": {"psmo": [{operation: {}}]},
+                    },
+                ).status_code
+                == 422
+            )
+        assert (
+            api.post(
+                "/api/orders/psmo",
+                headers=headers,
+                json={
+                    "eidValue": "89000000000000000000000000000099",
+                    "order": {"psmo": [{"listProfileInfo": {}}]},
+                },
+            ).status_code
+            == 422
+        )
+        request = {"eidValue": EIDS[0], "order": {"psmo": [{"listProfileInfo": {}}]}}
+        operation = api.post("/api/orders/psmo", headers=headers, json=request).json()["resourceId"]
+        path = "/api/orders/psmo/" + operation
+        assert api.get(path, headers=headers).json()["status"] == "new"
+    with TestClient(create_mock(database, secret)) as restarted:
+        assert restarted.get(path, headers=headers).json()["status"] == "work"
+        result = restarted.get(path, headers=headers).json()
+        assert result["status"] == "done" and result["resource"] == request
+        assert result["outcome"][0]["listProfileInfoResult"]["finalResult"] == "successResult"
+        assert (
+            restarted.get("/api/orders/psmo/missing", headers=headers).json()["status"] == "absent"
+        )
+
+
+def test_local_compose_is_separate_and_loopback_only():
+    import yaml
+
+    config = yaml.safe_load(Path("deploy/local/compose.yaml").read_text())
+    assert config["networks"]["default"]["internal"] is True
+    for service in config["services"].values():
+        for port in service.get("ports", []):
+            assert port.startswith("127.0.0.1:")
+    agent = config["services"]["agent-sim"]
+    assert agent["environment"]["AGENT_SIMULATE"] == "true"
+    assert not any("onomondo" in key.lower() for key in agent["environment"])
+    assert "mock_api_key" not in agent["secrets"]
+    for role in ("api", "worker"):
+        assert (
+            config["services"][role]["depends_on"]["migrate"]["condition"]
+            == "service_completed_successfully"
+        )

@@ -59,3 +59,18 @@ Hosted beta JSON requires operator verification before live API calls; see
 [discovery](docs/DISCOVERY.md). Sanitized real UART and local-MQTTS evidence lives
 in [the hardware record](docs/evidence/HARDWARE.md). The final scope, test results
 and live-validation limitations are in [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md).
+
+## Run locally with Docker
+
+With Docker running:
+
+```sh
+uv run python deploy/local/manage.py up
+uv run python deploy/local/manage.py smoke
+```
+
+Open **https://localhost:8443/api/v1/docs**. Login is `admin`; its generated password
+is stored in ignored `.local/sgp32/operator_password`, and the local CA is
+`.local/sgp32/ca.crt`. This uses synthetic Onomondo data and a simulated device.
+See [local Docker setup](docs/LOCAL_DOCKER.md) for TLS trust, real UART attachment,
+stop commands, credential handling and the exact separation from live inventory.

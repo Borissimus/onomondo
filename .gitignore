@@ -34,3 +34,6 @@ dist/
 .coverage
 htmlcov/
 .uv-cache/
+
+# Local Docker credentials and certificates
+.local/
