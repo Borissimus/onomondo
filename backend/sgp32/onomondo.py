@@ -3,6 +3,7 @@
 import math
 import random
 import re
+import ssl
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -70,6 +71,9 @@ class Onomondo:
             follow_redirects=False,
             transport=transport,
             trust_env=False,
+            verify=ssl.create_default_context(cafile=str(settings.onomondo_ca_file))
+            if settings.onomondo_ca_file
+            else True,
         )
         self.mock = isinstance(transport, httpx.MockTransport)
 
@@ -131,6 +135,26 @@ class Onomondo:
                 if not exc.retryable or attempt == 2 or time.monotonic() + delay >= budget:
                     raise
                 self.sleep(delay)
+        if isinstance(value, dict):
+            pagination = value.get("pagination")
+            if not isinstance(pagination, dict) or not isinstance(pagination.get("has_more"), bool):
+                raise UpstreamError("upstream_schema_error")
+            if pagination["has_more"]:
+                # The hosted pagination request contract is not yet authenticated/documented.
+                # Never silently return an incomplete organization inventory.
+                raise UpstreamError("inventory_pagination_unconfirmed")
+            data = value.get("data")
+            if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+                raise UpstreamError("upstream_schema_error")
+            # Observed hosted shape. Association tokens and key material are not inventory metadata.
+            allowed = {"id", "counter_value", "consumer_euicc", "created_at", "updated_at"}
+            value = [
+                {
+                    "eidValue": row.get("eid_value"),
+                    **{key: item for key, item in row.items() if key in allowed},
+                }
+                for row in data
+            ]
         if not isinstance(value, list) or any(
             not isinstance(row, dict) or not re.fullmatch(r"\d{32}", str(row.get("eidValue", "")))
             for row in value
