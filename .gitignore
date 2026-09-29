@@ -1,0 +1,29 @@
+# Secrets
+api-keys.md
+.env
+.env.*
+*.pem
+*.key
+*.p12
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Runtime data
+*.db
+*.sqlite*
+logs/
+data/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+
