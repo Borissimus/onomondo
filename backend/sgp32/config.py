@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sgp32_common.security import register_secret
 
 
 class Settings(BaseSettings):
@@ -40,6 +41,7 @@ class Settings(BaseSettings):
                 or "REPLACE_ME" in secret.get_secret_value()
             ):
                 raise ValueError("Required secret missing")
+            register_secret(secret.get_secret_value())
         assert self.operator_password_hash
         if not self.operator_password_hash.get_secret_value().startswith("$argon2id$"):
             raise ValueError("Operator password must be an Argon2id hash")

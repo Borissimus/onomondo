@@ -41,4 +41,4 @@ def test_redaction():
 
 def test_forbidden_file(tmp_path):
     with pytest.raises(ValidationError, match="Forbidden secret source"):
-        Settings(onomondo_api_key_file=tmp_path / "api-keys.md")
+        Settings(operator_password_hash_file=tmp_path / "api-keys.md")

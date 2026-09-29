@@ -39,6 +39,7 @@ ignore = ["S101", "S311"]
 "tests/*" = ["S105", "S106", "S603", "S607"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 python_version = "3.12"
 files = ["backend", "device-agent", "shared"]
 check_untyped_defs = true
