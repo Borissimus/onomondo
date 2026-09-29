@@ -1,0 +1,129 @@
+import logging
+import queue
+import time
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from sgp32_common.messages import envelope, now_iso
+from sgp32_common.mqtt import MqttBus, MqttSettings
+from sgp32_common.security import configure_logging
+
+from sgp32_agent.commands import CommandStore, Dispatcher
+from sgp32_agent.modem import ModemDiagnostics, SimulatedModem
+from sgp32_agent.serial_transport import SerialTransport
+
+
+class AgentSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="AGENT_", env_file=None, extra="ignore", hide_input_in_errors=True
+    )
+    device_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    serial_port: str = "/dev/ttyUSB2"
+    baud: int = 115200
+    command_db: Path = Path("data/agent-commands.db")
+    simulate: bool = False
+    allow_imsi: bool = False
+    telemetry_interval: float = Field(default=60, ge=15)
+
+
+def run(settings: AgentSettings, mqtt_settings: MqttSettings) -> None:
+    if mqtt_settings.username != settings.device_id:
+        raise ValueError("MQTT identity must match device ID")
+    session = str(uuid4())
+    presence: dict[str, Any] = {
+        "schemaVersion": 1,
+        "state": "offline",
+        "sessionId": session,
+        "timestamp": now_iso(),
+    }
+    root = f"devices/{settings.device_id}"
+    bus = MqttBus(mqtt_settings, "agent-" + settings.device_id, (root + "/status", presence))
+    urcs: queue.Queue[str] = queue.Queue(maxsize=128)
+
+    def urc(line: str) -> None:
+        try:
+            urcs.put_nowait(line)
+        except queue.Full:
+            pass
+
+    transport = SerialTransport(settings.serial_port, settings.baud, urc)
+    modem = ModemDiagnostics(
+        SimulatedModem() if settings.simulate else transport, allow_imsi=settings.allow_imsi
+    )
+    dispatcher = Dispatcher(settings.device_id, modem, CommandStore(settings.command_db))
+    bus.subscribe(root + "/commands")
+    bus.start()
+    next_telemetry = 0.0
+    online = False
+    try:
+        while True:
+            if not bus.connected.wait(timeout=1):
+                online = False
+                continue
+            if not online:
+                bus.publish(
+                    root + "/status",
+                    {**presence, "state": "online", "timestamp": now_iso()},
+                    retain=True,
+                )
+                online = True
+            try:
+                topic, raw, retained = bus.inbox.get(timeout=0.1)
+                result = dispatcher.dispatch(topic, raw, retained)
+                if result:
+                    bus.publish(
+                        root + "/commands/" + result["payload"]["commandId"] + "/result", result
+                    )
+            except queue.Empty:
+                pass
+            except (ConnectionError, RuntimeError):
+                online = False
+            if time.monotonic() >= next_telemetry:
+                observation = modem.collect()
+                try:
+                    bus.publish(
+                        root + "/telemetry/modem",
+                        envelope(
+                            "modem.telemetry",
+                            {"commandId": str(uuid4()), **observation},
+                            str(uuid4()),
+                        ),
+                    )
+                    bus.publish(
+                        root + "/status",
+                        {**presence, "state": "online", "timestamp": now_iso()},
+                        retain=True,
+                    )
+                except (ConnectionError, RuntimeError):
+                    online = False
+                next_telemetry = time.monotonic() + settings.telemetry_interval
+            for _ in range(32):
+                try:
+                    line = urcs.get_nowait()
+                    bus.publish(
+                        root + "/events/modem",
+                        envelope("modem.event", {"line": line}, str(uuid4())),
+                    )
+                except (queue.Empty, ConnectionError, RuntimeError):
+                    break
+    finally:
+        try:
+            if bus.connected.is_set():
+                bus.publish(root + "/status", {**presence, "timestamp": now_iso()}, retain=True)
+        finally:
+            bus.stop()
+            transport.close()
+
+
+def main() -> None:
+    configure_logging()
+    try:
+        run(AgentSettings(), MqttSettings())
+    except KeyboardInterrupt:
+        return
+    except Exception:
+        logging.error("agent_stopped_configuration_or_dependency_error")
+        raise SystemExit(1) from None

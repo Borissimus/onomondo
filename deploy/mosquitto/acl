@@ -1,0 +1,24 @@
+# Explicit device principals. Provision a block for every device; no device wildcards.
+user device-a
+topic write devices/device-a/status
+topic write devices/device-a/telemetry/modem
+topic write devices/device-a/events/modem
+topic write devices/device-a/commands/+/result
+topic read devices/device-a/commands
+topic read devices/device-a/esim/operations/+
+
+user device-b
+topic write devices/device-b/status
+topic write devices/device-b/telemetry/modem
+topic write devices/device-b/events/modem
+topic write devices/device-b/commands/+/result
+topic read devices/device-b/commands
+topic read devices/device-b/esim/operations/+
+
+user backend
+topic read devices/+/status
+topic read devices/+/telemetry/modem
+topic read devices/+/events/modem
+topic read devices/+/commands/+/result
+topic write devices/+/commands
+topic write devices/+/esim/operations/+
