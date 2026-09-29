@@ -7,21 +7,71 @@ import ssl
 import subprocess
 import time
 from pathlib import Path
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 from sgp32.mqtt import BackendMessaging
-from sgp32.storage import DeviceCommand, Observation
+from sgp32.storage import Device, DeviceCommand, Observation
 from sgp32.worker import Worker
 from sgp32_agent.commands import CommandStore, Dispatcher
 from sgp32_agent.modem import ModemDiagnostics, SimulatedModem
 from sgp32_agent.serial_transport import SerialTransport
-from sgp32_common.messages import now_iso
+from sgp32_common.messages import envelope, now_iso
 from sgp32_common.mqtt import MqttBus, MqttSettings
 from sqlalchemy import select
 
 from tests.conftest import EID, SUCCESS
 from tests.test_agent import PTYModem
+
+
+def test_presence_preserves_diagnostics_only_for_current_session(backend, db):
+    client, _, _ = backend
+    client.post("/api/v1/euiccs/sync")
+    client.post("/api/v1/devices", json={"device_id": "device-a", "name": "A", "eid": EID})
+    messaging = BackendMessaging(db, Mock())
+    session_id = str(uuid4())
+
+    def presence(state):
+        assert messaging.receive(
+            "devices/device-a/status",
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "state": state,
+                    "sessionId": session_id,
+                    "timestamp": now_iso(),
+                }
+            ).encode(),
+        )
+
+    def state():
+        with db.session() as session:
+            return session.scalar(select(Device).where(Device.device_id == "device-a")).state
+
+    presence("online")
+    assert state() == "online_unregistered"
+    observation = ModemDiagnostics(SimulatedModem()).collect()
+    assert messaging.receive(
+        "devices/device-a/telemetry/modem",
+        json.dumps(
+            envelope(
+                "modem.telemetry",
+                {**observation, "commandId": str(uuid4()), "status": "succeeded"},
+                str(uuid4()),
+            )
+        ).encode(),
+    )
+    assert state() == "data_connected"
+    presence("online")
+    assert state() == "data_connected"
+    session_id = str(uuid4())
+    presence("online")
+    assert state() == "online_unregistered"
+    presence("offline")
+    assert state() == "offline"
+    presence("online")
+    assert state() == "online_unregistered"
 
 
 def wait_for(predicate, timeout=5):
