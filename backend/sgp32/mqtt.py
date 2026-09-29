@@ -77,9 +77,11 @@ class BackendMessaging:
                         return False
                     if presence.state == "online" and now - observed > 180:
                         return False
-                    device.state = (
-                        "online_unregistered" if presence.state == "online" else "offline"
-                    )
+                    if presence.state == "offline":
+                        device.state = "offline"
+                    elif device.session_id != session or device.state in {"offline", "unknown"}:
+                        device.state = "online_unregistered"
+                    # A heartbeat confirms MQTT presence, not a change in modem registration.
                     device.session_id = session
                     device.last_seen = now
                     LAST_SEEN.labels(device_id).set(now)
