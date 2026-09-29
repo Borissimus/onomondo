@@ -42,3 +42,24 @@ def test_redaction():
 def test_forbidden_file(tmp_path):
     with pytest.raises(ValidationError, match="Forbidden secret source"):
         Settings(operator_password_hash_file=tmp_path / "api-keys.md")
+
+
+def test_registered_secrets_redacted_in_arbitrary_fields(settings):
+    value = scrub({"unexpected": settings.onomondo_api_key.get_secret_value()}, identifiers=False)
+    assert value["unexpected"] == "[REDACTED]"
+
+
+def test_device_package_has_no_backend_secret_dependency():
+    from pathlib import Path
+
+    for path in Path("device-agent/sgp32_agent").glob("*.py"):
+        source = path.read_text()
+        assert "ONOMONDO_API_KEY" not in source
+        assert "from sgp32." not in source
+
+
+def test_https_and_poll_minimum(settings):
+    value = settings.model_dump()
+    for update in ({"onomondo_api_url": "http://example.invalid/api"}, {"poll_interval": 9}):
+        with pytest.raises(ValidationError):
+            Settings(**{**value, **update})

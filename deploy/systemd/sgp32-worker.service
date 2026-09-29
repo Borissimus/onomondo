@@ -1,0 +1,20 @@
+[Unit]
+Description=Read-only SGP.32 order and MQTT worker
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=sgp32
+Group=sgp32
+WorkingDirectory=/opt/sgp32
+EnvironmentFile=/etc/sgp32/backend.env
+ExecStart=/opt/sgp32/.venv/bin/sgp32-worker
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sgp32
+[Install]
+WantedBy=multi-user.target

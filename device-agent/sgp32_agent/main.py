@@ -64,12 +64,16 @@ def run(settings: AgentSettings, mqtt_settings: MqttSettings) -> None:
                 online = False
                 continue
             if not online:
-                bus.publish(
-                    root + "/status",
-                    {**presence, "state": "online", "timestamp": now_iso()},
-                    retain=True,
-                )
-                online = True
+                try:
+                    bus.publish(
+                        root + "/status",
+                        {**presence, "state": "online", "timestamp": now_iso()},
+                        retain=True,
+                    )
+                    online = True
+                except (ConnectionError, RuntimeError):
+                    time.sleep(1)
+                    continue
             try:
                 topic, raw, retained = bus.inbox.get(timeout=0.1)
                 result = dispatcher.dispatch(topic, raw, retained)

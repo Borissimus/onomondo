@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import secrets
 import time
 from collections.abc import Callable
@@ -144,7 +145,10 @@ def create_app(
 
     @app.exception_handler(UpstreamError)
     async def upstream_error(request: Request, exc: UpstreamError) -> JSONResponse:
-        return fail(request, 503, exc.code)
+        response = fail(request, 503, exc.code)
+        if exc.retry_after:
+            response.headers["Retry-After"] = str(math.ceil(exc.retry_after))
+        return response
 
     def authenticate(
         request: Request, credentials: Annotated[HTTPBasicCredentials | None, Depends(basic)]
