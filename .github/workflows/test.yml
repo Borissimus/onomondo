@@ -1,0 +1,29 @@
+name: test
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.12', '3.14']
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: sgp32
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: sudo apt-get update && sudo apt-get install -y mosquitto mosquitto-clients
+      - run: uv sync --locked
+      - run: uv run ruff check . && uv run ruff format --check . && uv run mypy
+      - run: uv run pytest -q
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://postgres:local-ci-only@localhost:5432/sgp32
