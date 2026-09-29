@@ -284,3 +284,24 @@ def test_retry_after_cannot_hide_operation_deadline(backend, db, settings):
     worker.tick(now + 15)
     worker.tick(now + 2000)
     assert api.get("/api/v1/operations/" + op).json()["state"] == "timed_out"
+
+
+def test_hosted_inventory_wrapper_and_sensitive_metadata(settings):
+    payload = {
+        "data": [
+            {
+                "eid_value": EID,
+                "id": "synthetic-card",
+                "consumer_euicc": False,
+                "association_token": 123,
+                "sign_pub_key": "not-inventory-metadata",
+            }
+        ],
+        "pagination": {"has_more": False, "next_page": None},
+    }
+    upstream = Onomondo(settings, httpx.MockTransport(lambda _: httpx.Response(200, json=payload)))
+    result = upstream.inventory()
+    assert result == [{"eidValue": EID, "id": "synthetic-card", "consumer_euicc": False}]
+    payload["pagination"] = {"has_more": True, "next_page": "unconfirmed-cursor"}
+    with pytest.raises(UpstreamError, match="inventory_pagination_unconfirmed"):
+        upstream.inventory()

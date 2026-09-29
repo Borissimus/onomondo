@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     onomondo_api_key: SecretStr | None = None
     onomondo_api_key_file: Path | None = None
     onomondo_schema_confirmed: bool = False
+    onomondo_ca_file: Path | None = None
     poll_interval: float = Field(default=15, ge=10)
     operation_timeout: float = Field(default=1800, ge=60)
 
