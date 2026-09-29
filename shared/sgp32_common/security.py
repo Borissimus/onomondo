@@ -3,6 +3,14 @@ import logging
 import re
 from typing import Any
 
+_SECRETS: set[str] = set()
+
+
+def register_secret(value: str) -> None:
+    if len(value) >= 4:
+        _SECRETS.add(value)
+
+
 SECRET_KEYS = re.compile(r"authorization|password|secret|token|activation.?code|api.?key", re.I)
 IDENTIFIER_KEYS = re.compile(r"imsi|iccid|eid", re.I)
 
@@ -18,6 +26,8 @@ def scrub(value: Any, *, identifiers: bool = True) -> Any:
     if isinstance(value, list):
         return [scrub(v, identifiers=identifiers) for v in value]
     if isinstance(value, str):
+        for secret in _SECRETS:
+            value = value.replace(secret, "[REDACTED]")
         value = re.sub(r'(?i)Bearer\s+[^\s"\',;]+', "Bearer [REDACTED]", value)
         value = re.sub(r'1\$[^\s"\']+', "[REDACTED]", value)
         value = re.sub(
