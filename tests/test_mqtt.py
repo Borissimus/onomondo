@@ -268,8 +268,14 @@ def test_rest_mqtt_pty_result_and_operation_loop(broker, backend, db, settings, 
         stored = client.get("/api/v1/device-commands/" + command_id).json()
         assert stored["state"] == "succeeded"
         assert stored["result"]["registration"] == "registered_roaming"
-        duplicate = dispatcher.dispatch("devices/device-a/commands", json.dumps(message).encode())
+        commands_before_replay = len(pty_modem.commands)
+        backend_bus.publish("devices/device-a/commands", message)
+        replay, retained = receive(agent_bus, "devices/device-a/commands")
+        duplicate = dispatcher.dispatch(
+            "devices/device-a/commands", json.dumps(replay).encode(), retained
+        )
         assert duplicate["payload"]["reason"] == "duplicate"
+        assert len(pty_modem.commands) == commands_before_replay
         agent_bus.publish(topic, duplicate)
         wait_for(lambda: not backend_bus.inbox.empty())
         messaging.flush()

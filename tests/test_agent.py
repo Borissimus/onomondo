@@ -82,6 +82,13 @@ def test_unauthorized_malformed_retained_and_raw_at(tmp_path):
         ]
         == "sensitive_identifiers_not_authorized"
     )
+    future = command(time.time() + 60)
+    assert (
+        dispatch.dispatch("devices/device-a/commands", json.dumps(future).encode())["payload"][
+            "reason"
+        ]
+        == "invalid_command_time"
+    )
     assert modem.calls == 0
 
 
