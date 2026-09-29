@@ -41,7 +41,7 @@ ignore = ["S101", "S311"]
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 python_version = "3.12"
-files = ["backend", "device-agent", "shared"]
+files = ["backend", "device-agent", "shared", "deploy/local"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 warn_unused_ignores = true

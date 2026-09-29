@@ -1,5 +1,65 @@
 # Implementation report — 2026-09-29
 
+## Follow-up: local Docker deployment and authorized live inventory
+
+The findings below supersede the initial report's Docker/PostgreSQL/credential
+availability limitations. The original milestone report is preserved afterwards
+as the record of that earlier verification stage.
+
+* Docker Desktop was started; Docker Engine 29.7.2 and Compose 5.5.0 are available.
+  The local stack is running under project `sgp32-local`, using a Python 3.12.14
+  image and PostgreSQL 17. No VPS service or other Docker project was changed.
+* Added `deploy/local/compose.yaml`, durable HTTPS fake Onomondo, a credential/TLS
+  preparation helper, startup migration dependencies, simulator, and a TCP gateway.
+  Published ports are loopback-only: API TLS 8443, MQTT TLS 8883, development DB 15432.
+  Application containers have no Internet egress. API/worker/agent run as 10001:10001.
+* The Dockerfile now prepares an owned writable state directory for named volumes;
+  the application root filesystem remains read-only. Local secret mounts grant
+  individual generated files only to the services that need them.
+* Authenticated HTTPS API → TLS MQTT → simulated device → PostgreSQL passed,
+  followed by the fake upstream new/work/done → persisted profile cycle.
+  The same diagnostic flow passed with the **real A7670E on the host** through
+  Docker MQTT/PostgreSQL. The temporary host hardware agent was stopped afterwards;
+  the Docker simulator remains running. This still does not prove PPP/LTE routing.
+* Fixed a deployment-discovered status bug: same-session MQTT heartbeats now
+  preserve the modem's diagnostic connectivity state; reconnects reset it pending
+  new diagnostics. A regression test covers heartbeat, reconnect and offline states.
+* Final suite with real UART and a separately created disposable PostgreSQL DB:
+  **45 passed, no skips**, 13.07 seconds. The disposable test DB was removed; the
+  demo database/volumes and hardware observations were preserved. Ruff, formatting
+  and mypy pass; type checking now covers 20 files including local deployment tools.
+* The user subsequently explicitly authorized reading `api-keys.md` for a test,
+  and prohibited undisclosed copying. A host Python process read the device-labelled
+  credential **into memory only**. It was not copied into a different secret file,
+  process environment, image, container, fixture, commit, log or terminal output.
+  The original file was not modified. Generated `mock_api_key` and TLS `api.key`
+  are unrelated local development credentials.
+* Live `GET /api/euicc` returned HTTP 200 with **five actual eUICCs**. The same
+  inventory was synchronized through the authenticated management backend into
+  protected `.local/sgp32/live-inventory.db`, separate from the synthetic Docker DB.
+  The key is absent from that database. This supplies live evidence for inventory
+  acceptance criterion 3; the exact secret was never included in the evidence.
+* Updated the adapter for the observed `{data: [{eid_value: ...}], pagination: ...}`
+  response. Association tokens/signing fields are omitted from stored inventory
+  metadata. Multi-page results fail explicitly until the pagination request
+  contract is confirmed. Tests cover this shape and metadata omission.
+* The application's own API-docs link returns 401 with the working API Bearer key.
+  The live PSMO submission/outcome contract remains unconfirmed, so **no live PSMO
+  POST was sent**. The running Docker stack uses fake credentials and synthetic
+  profile operations exclusively. The default production schema gate remains false.
+
+Access and repeatable commands are in [LOCAL_DOCKER.md](docs/LOCAL_DOCKER.md).
+API docs: https://localhost:8443/api/v1/docs; user `admin`; generated password in
+ignored `.local/sgp32/operator_password`; local CA `.local/sgp32/ca.crt`.
+No system/browser CA trust was installed automatically.
+
+Additional checks: local Compose config, repeated startup preserving credentials,
+actual PostgreSQL Alembic/worker concurrency test, local Docker smoke, real-device
+Docker smoke, runtime non-root identity, and safe log/secret-boundary checks.
+The previous Starlette/httpx test-client deprecation warning remains non-failing.
+
+## Original milestone implementation report
+
 Implementation and all commits are on `feature/sgp32-prototype`. `main` remains
 at the original specification baseline
 `2bbe87873e1b031a01adc4c202f0c1be954c6e96`. No merge, force-push or deployment was
