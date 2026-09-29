@@ -1,0 +1,74 @@
+x-backend: &backend
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  env_file: /etc/sgp32/backend.env
+  secrets:
+    - onomondo_api_key
+    - operator_argon2id
+    - database_url
+    - backend_mqtt_password
+  volumes:
+    - /etc/sgp32/ca.crt:/etc/sgp32/ca.crt:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+    mosquitto:
+      condition: service_started
+services:
+  api:
+    <<: *backend
+    ports: ['127.0.0.1:8000:8000']
+  worker:
+    <<: *backend
+    command: ['sgp32-worker']
+  migrate:
+    <<: *backend
+    restart: 'no'
+    profiles: [tools]
+    command: ['python', '-m', 'sgp32.migrate']
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sgp32
+      POSTGRES_USER: sgp32
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sgp32 -d sgp32']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports: ['8883:8883']
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/acl:/mosquitto/config/acl:ro
+      - /etc/sgp32/mosquitto-secrets:/mosquitto/secrets:ro
+      - mosquitto-data:/mosquitto/data
+    networks:
+      default:
+        aliases: [mqtt.example.invalid]
+volumes:
+  postgres-data:
+  mosquitto-data:
+secrets:
+  onomondo_api_key:
+    file: /etc/sgp32/secrets/onomondo_api_key
+  operator_argon2id:
+    file: /etc/sgp32/secrets/operator_argon2id
+  database_url:
+    file: /etc/sgp32/secrets/database_url
+  backend_mqtt_password:
+    file: /etc/sgp32/secrets/backend_mqtt_password
+  postgres_password:
+    file: /etc/sgp32/secrets/postgres_password

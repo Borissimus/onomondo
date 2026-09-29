@@ -46,3 +46,16 @@ Read these in order before implementation:
 - Profile deletion, eIM replacement, or default SM-DP+ modification.
 - A production-ready graphical UI.
 
+
+## Implementation and verification
+
+The branch now includes the read-only backend, durable polling/outbox, MQTT TLS
+transport, persistent diagnostic-command deduplication and the A7670E UART agent.
+Start with [developer setup](docs/DEVELOPMENT.md), then the
+[VPS/operator runbook](docs/OPERATIONS.md) and
+[hardware runbook](docs/HARDWARE_RUNBOOK.md).
+
+Hosted beta JSON requires operator verification before live API calls; see
+[discovery](docs/DISCOVERY.md). Sanitized real UART and local-MQTTS evidence lives
+in [the hardware record](docs/evidence/HARDWARE.md). The final scope, test results
+and live-validation limitations are in [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md).

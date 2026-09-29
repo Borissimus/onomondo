@@ -184,3 +184,103 @@ def test_migration_roundtrip(db):
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
     command.check(cfg)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, content=b"{broken"),
+        httpx.Response(200, json={"noResourceId": True}),
+        httpx.Response(503, json={"message": "upstream unavailable"}),
+    ],
+)
+def test_unusable_post_response_is_unknown(settings, response):
+    upstream = Onomondo(settings, httpx.MockTransport(lambda _: response))
+    from sgp32.onomondo import SubmissionUnknown
+
+    with pytest.raises(SubmissionUnknown):
+        upstream.submit(EID)
+
+
+def test_timeout_and_manual_get_only_reconciliation(backend, db, settings):
+    op = refresh(backend)
+    api, fake, upstream = backend
+    worker, now = Worker(db, upstream, settings), time.time()
+    worker.tick(now)
+    worker.tick(now + 2000)
+    assert api.get("/api/v1/operations/" + op).json()["state"] == "timed_out"
+    fake.states = [
+        {
+            "status": "work",
+            "resource": {"eidValue": EID, "order": {"psmo": [{"listProfileInfo": {}}]}},
+        },
+        SUCCESS,
+    ]
+    assert api.post("/api/v1/operations/" + op + "/reconcile", json={}).status_code == 202
+    worker.tick(time.time() + 16)
+    assert api.get("/api/v1/operations/" + op).json()["state"] == "succeeded"
+    assert sum(x.method == "POST" for x in fake.calls) == 1
+
+
+def test_schema_drift_never_becomes_success(settings):
+    for status in (None, [], {}, 12):
+        with pytest.raises(UpstreamError):
+            normalize({"status": status})
+    upstream = Onomondo(settings, httpx.MockTransport(lambda _: httpx.Response(200, json={})))
+    with pytest.raises(UpstreamError, match="schema"):
+        upstream.inventory()
+
+
+def test_retry_limit(backend, db, settings):
+    op = refresh(backend)
+    api, fake, upstream = backend
+    fake.states = [httpx.Response(502) for _ in range(7)]
+    worker, now = Worker(db, upstream, settings), time.time()
+    worker.tick(now)
+    for index in range(7):
+        worker.tick(now + 200 * (index + 1))
+    assert api.get("/api/v1/operations/" + op).json()["state"] == "failed"
+
+
+def test_concurrent_idempotency(backend):
+    api, _, _ = backend
+    api.post("/api/v1/euiccs/sync")
+    with ThreadPoolExecutor(2) as pool:
+        responses = list(
+            pool.map(
+                lambda _: api.post(
+                    f"/api/v1/euiccs/{EID}/profiles/refresh",
+                    headers={"Idempotency-Key": "concurrent"},
+                ),
+                range(2),
+            )
+        )
+    assert all(response.status_code == 202 for response in responses)
+    assert responses[0].json() == responses[1].json()
+
+
+def test_inventory_get_retries_are_bounded_and_delayed(settings):
+    responses = iter(
+        [
+            httpx.Response(502),
+            httpx.Response(429, headers={"Retry-After": "20"}),
+            httpx.Response(200, json=[{"eidValue": EID}]),
+        ]
+    )
+    delays = []
+    upstream = Onomondo(
+        settings, httpx.MockTransport(lambda _: next(responses)), sleep=delays.append
+    )
+    assert upstream.inventory() == [{"eidValue": EID}]
+    assert len(delays) == 2 and delays[0] >= 15 and delays[1] >= 20
+
+
+def test_retry_after_cannot_hide_operation_deadline(backend, db, settings):
+    op = refresh(backend)
+    api, fake, upstream = backend
+    fake.states = [httpx.Response(429, headers={"Retry-After": "999999"})]
+    worker, now = Worker(db, upstream, settings), time.time()
+    worker.tick(now)
+    worker.tick(now + 15)
+    worker.tick(now + 2000)
+    assert api.get("/api/v1/operations/" + op).json()["state"] == "timed_out"

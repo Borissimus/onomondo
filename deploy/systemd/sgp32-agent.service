@@ -1,0 +1,20 @@
+[Unit]
+Description=A7670E diagnostics agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=sgp32-agent
+Group=dialout
+WorkingDirectory=/opt/sgp32
+EnvironmentFile=/etc/sgp32-agent/agent.env
+ExecStart=/opt/sgp32/.venv/bin/sgp32-agent
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sgp32-agent
+[Install]
+WantedBy=multi-user.target

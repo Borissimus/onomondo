@@ -3,6 +3,7 @@ import ssl
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 
 import httpx
 from fastapi.testclient import TestClient
@@ -46,7 +47,13 @@ def test_fake_https_onomondo_server(broker, settings, db):  # noqa: F811
             self.end_headers()
             self.wfile.write(body)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class LocalServer(ThreadingHTTPServer):
+        def server_bind(self):
+            TCPServer.server_bind(self)
+            self.server_name = "localhost"
+            self.server_port = self.server_address[1]
+
+    server = LocalServer(("127.0.0.1", 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(certificates / "server.crt", certificates / "server.key")
     server.socket = context.wrap_socket(server.socket, server_side=True)

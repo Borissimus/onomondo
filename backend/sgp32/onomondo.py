@@ -1,8 +1,10 @@
 """Only the three guide-confirmed paths. Hosted wire shape requires confirmation."""
 
+import math
 import random
 import re
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -40,7 +42,8 @@ def retry_delay(header: str | None, attempt: int, interval: float = 15) -> float
                 seconds = (parsedate_to_datetime(header) - datetime.now(UTC)).total_seconds()
             except (ValueError, TypeError, OverflowError):
                 seconds = 0
-        delay = max(delay, seconds)
+        if math.isfinite(seconds):
+            delay = max(delay, seconds)
     return delay
 
 
@@ -51,8 +54,14 @@ def profile_request(eid: str) -> dict[str, Any]:
 
 
 class Onomondo:
-    def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        transport: httpx.BaseTransport | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
         self.settings = settings
+        self.sleep = sleep
         assert settings.onomondo_api_key
         self.client = httpx.Client(
             base_url=settings.onomondo_api_url.rstrip("/") + "/",
@@ -110,7 +119,18 @@ class Onomondo:
             raise
 
     def inventory(self) -> list[dict[str, Any]]:
-        value = self.request("GET", "euicc")
+        budget = time.monotonic() + 45
+        for attempt in range(3):
+            try:
+                value = self.request("GET", "euicc")
+                break
+            except UpstreamError as exc:
+                delay = max(
+                    exc.retry_after, retry_delay(None, attempt, self.settings.poll_interval)
+                )
+                if not exc.retryable or attempt == 2 or time.monotonic() + delay >= budget:
+                    raise
+                self.sleep(delay)
         if not isinstance(value, list) or any(
             not isinstance(row, dict) or not re.fullmatch(r"\d{32}", str(row.get("eidValue", "")))
             for row in value
@@ -178,7 +198,10 @@ def normalize(value: dict[str, Any]) -> tuple[str, list[dict[str, Any]], str | N
         normalized: dict[str, Any] = {"iccid": iccid}
         for local, remote in fields.items():
             val = row.get(remote)
-            if val is not None and (not isinstance(val, str) or len(val) > 128):
+            if val is not None and (
+                not isinstance(val, str)
+                or len(val) > (32 if local in {"profile_class", "state"} else 128)
+            ):
                 return "failed", [], "invalid_profile_inventory"
             normalized[local] = val
         fallback = row.get("fallbackAttribute")

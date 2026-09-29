@@ -2,7 +2,7 @@ import logging
 import time
 from typing import Any
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Histogram, start_http_server
 from sgp32_common.messages import envelope
 from sgp32_common.security import configure_logging
 from sqlalchemy import delete, select, update
@@ -105,7 +105,11 @@ class Worker:
             if op is None:
                 return True
             op.state, op.resource_id, op.error = next_state, resource, error
-            op.updated_at, op.next_poll, op.attempts = now, now + max(10, delay), attempt
+            op.updated_at, op.next_poll, op.attempts = (
+                now,
+                min(now + max(10, delay), op.deadline),
+                attempt,
+            )
             op.lease_until, op.lease_token = 0, None
             if result is not None:
                 op.raw_outcome = safe_raw(result)
@@ -155,6 +159,7 @@ def main() -> None:
         messaging = BackendMessaging.from_env(db)
         messaging.start()
         worker = Worker(db, upstream, settings)
+        start_http_server(9100, addr="127.0.0.1")
         try:
             while True:
                 worker.tick()

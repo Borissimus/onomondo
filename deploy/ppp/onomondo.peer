@@ -1,0 +1,12 @@
+# Linux template; replace the DATA port after identifying all modem USB interfaces.
+# The diagnostic agent must use a DIFFERENT UART. Do not share with FTDI diagnostics.
+/dev/ttyUSB3
+115200
+lock
+noauth
+noipdefault
+ipcp-accept-local
+ipcp-accept-remote
+nodetach
+connect "/usr/sbin/chat -f /etc/ppp/onomondo.chat"
+# No defaultroute or usepeerdns: add only an explicit broker host route after link-up.

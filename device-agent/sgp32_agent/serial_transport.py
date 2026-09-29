@@ -159,6 +159,14 @@ class SerialTransport:
             finally:
                 with self._state_lock:
                     self._responses, self._prefix = None, None
+                    # A final result can race the timeout; consume it before resuming.
+                    if self._awaiting_final:
+                        while not responses.empty():
+                            final = responses.get_nowait()
+                            if final in {"OK", "ERROR"} or final.startswith(
+                                ("+CME ERROR:", "+CMS ERROR:")
+                            ):
+                                self._awaiting_final = False
                 if failed:
                     self.close()
                     # Discard late replies before reopening; commands are not pipelined.

@@ -8,6 +8,7 @@ from sgp32_common.security import register_secret
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore", hide_input_in_errors=True)
+    database_url_file: Path | None = None
     database_url: SecretStr = SecretStr("sqlite:///./data/sgp32.db")
     operator_username: str = "admin"
     operator_password_hash: SecretStr | None = None
@@ -21,7 +22,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_secrets(self) -> "Settings":
-        for field in ("operator_password_hash", "onomondo_api_key"):
+        for field in ("operator_password_hash", "onomondo_api_key", "database_url"):
             path = getattr(self, field + "_file")
             if path:
                 if path.name == "api-keys.md":
