@@ -59,3 +59,31 @@ routes were not changed. The broker was local, so this proves real hardware
 **diagnostics over host MQTTS**, not modem-carried MQTTS. Live beta Onomondo
 inventory/order processing remains untested pending an approved secret source
 and authenticated JSON schema verification.
+
+## Hosted read-only SGP.32 validation — 2026-09-30
+
+An operator-provisioned, ignored runtime secret was mounted only into the local
+API and worker containers. The separate `sgp32-live` project used its own
+PostgreSQL/MQTT volumes; mock Onomondo and the simulated device were disabled.
+No credential value was printed, copied into an image or exposed to the device
+agent.
+
+Observed sanitized sequence:
+
+```text
+GET hosted inventory -> 5 registered eUICCs
+device-b UART precheck -> SIM ready, registered roaming, packet attached, CSQ 28
+local operation -> created -> queued -> succeeded
+hosted resource -> 01a0f224-83a3-730a-bcdc-13c5ca481c1d
+profile inventory -> 1 operational Onomondo profile, enabled, ICCID ***623769
+```
+
+The operation targeted EID `***876379` and was limited to `listProfileInfo`.
+The hosted result matched
+`listProfileInfoResult.finalResult=successResult/profileInfoList` and was stored
+in the live PostgreSQL database. No download, enable, disable, delete, eIM,
+SM-DP+, raw APDU or SIM Toolkit reply operation was performed.
+
+This confirms the full hosted read-only control path through Onomondo eIM and the
+IPAe/eUICC. Device-agent MQTT still used the Mac network path; PPP/modem-carried
+MQTTS remains a separate unproven transport milestone.

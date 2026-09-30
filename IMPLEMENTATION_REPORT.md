@@ -6,7 +6,16 @@ Independent review found that the result adapter and mock used `profileInfo`,
 while the user's previously captured successful hosted response uses the SGP.32
 field `profileInfoList`. The adapter, mock and fixtures were corrected before any
 container was connected to the live order API. A regression run covers the
-corrected shape. No live PSMO request was issued during this review.
+corrected shape.
+
+After explicit operator provisioning of a dedicated ignored runtime secret, the
+isolated `sgp32-live` project synchronized five hosted eUICCs and successfully
+completed one live `listProfileInfo` operation for the bench card. The local
+state transitioned `created -> queued -> succeeded`; one enabled operational
+Onomondo profile was normalized and persisted. Sanitized evidence is recorded in
+`docs/evidence/HARDWARE.md`. No profile-changing operation was implemented or
+executed. Modem diagnostics succeeded through host MQTTS; modem-carried MQTTS is
+still unproven.
 
 ## Follow-up: local Docker deployment and authorized live inventory
 
