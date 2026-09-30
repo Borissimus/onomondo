@@ -17,7 +17,7 @@ SUCCESS = {
         {
             "listProfileInfoResult": {
                 "finalResult": "successResult",
-                "profileInfo": [
+                "profileInfoList": [
                     {
                         "iccid": ICCID,
                         "profileName": "Test Onomondo",

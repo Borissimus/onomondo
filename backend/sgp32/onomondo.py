@@ -200,7 +200,7 @@ def normalize(value: dict[str, Any]) -> tuple[str, list[dict[str, Any]], str | N
         or "procedureError" in result
     ):
         return "failed", [], "unsuccessful_outcome"
-    rows = result.get("profileInfo")
+    rows = result.get("profileInfoList")
     if not isinstance(rows, list):
         return "failed", [], "invalid_profile_inventory"
     profiles = []

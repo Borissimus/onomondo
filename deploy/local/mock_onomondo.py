@@ -84,7 +84,7 @@ def create_mock(database: Path, key_file: Path) -> FastAPI:
                 {
                     "listProfileInfoResult": {
                         "finalResult": "successResult",
-                        "profileInfo": [
+                        "profileInfoList": [
                             {
                                 "iccid": f"89450000000000{index:05d}",
                                 "profileName": "LOCAL FAKE Onomondo",

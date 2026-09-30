@@ -1,5 +1,13 @@
 # Implementation report — 2026-09-29
 
+## Review follow-up — 2026-09-30
+
+Independent review found that the result adapter and mock used `profileInfo`,
+while the user's previously captured successful hosted response uses the SGP.32
+field `profileInfoList`. The adapter, mock and fixtures were corrected before any
+container was connected to the live order API. A regression run covers the
+corrected shape. No live PSMO request was issued during this review.
+
 ## Follow-up: local Docker deployment and authorized live inventory
 
 The findings below supersede the initial report's Docker/PostgreSQL/credential
