@@ -1,0 +1,54 @@
+# Read-only hosted Onomondo validation overlay.
+# Use only together with deploy/local/compose.yaml and only after creating the
+# ignored .local/sgp32-live/onomondo_api_key file described in LIVE_LOCAL.md.
+name: sgp32-live
+
+services:
+  # Keep mock-only components out of the live project by default.
+  mock-onomondo:
+    profiles: [mock-only]
+
+  agent-sim:
+    profiles: [mock-only]
+
+  api:
+    environment:
+      ONOMONDO_API_KEY_FILE: /run/secrets/onomondo_api_key
+      ONOMONDO_API_URL: https://app.esim-iot.onomondo.com/api
+      ONOMONDO_CA_FILE: /etc/ssl/certs/ca-certificates.crt
+      # The inventory and listProfileInfo contracts are confirmed by observed
+      # hosted responses. This does not authorize any profile-changing operation.
+      ONOMONDO_SCHEMA_CONFIRMED: 'true'
+    secrets: !override
+      - database_url
+      - operator_argon2id
+      - onomondo_api_key
+      - ca_crt
+      - backend_mqtt_password
+      - api_crt
+      - api_key
+    networks: !override [default, edge]
+
+  worker:
+    environment:
+      ONOMONDO_API_KEY_FILE: /run/secrets/onomondo_api_key
+      ONOMONDO_API_URL: https://app.esim-iot.onomondo.com/api
+      ONOMONDO_CA_FILE: /etc/ssl/certs/ca-certificates.crt
+      ONOMONDO_SCHEMA_CONFIRMED: 'true'
+    secrets: !override
+      - database_url
+      - operator_argon2id
+      - onomondo_api_key
+      - ca_crt
+      - backend_mqtt_password
+    networks: !override [default, edge]
+    depends_on: !override
+      migrate:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_healthy
+
+secrets:
+  onomondo_api_key:
+    file: ../../.local/sgp32-live/onomondo_api_key
+

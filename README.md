@@ -26,6 +26,9 @@ Read these in order before implementation:
 6. [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md)
 7. [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md)
 
+For an explicitly authorized, read-only local run against the hosted Onomondo
+beta after mock validation, follow [`docs/LIVE_LOCAL.md`](docs/LIVE_LOCAL.md).
+
 `HANDOFF_PROMPT.md` contains a ready-to-use prompt for the implementation agent.
 
 ## Confirmed hardware and service facts
