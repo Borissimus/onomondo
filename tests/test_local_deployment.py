@@ -68,3 +68,11 @@ def test_local_compose_is_separate_and_loopback_only():
             config["services"][role]["depends_on"]["migrate"]["condition"]
             == "service_completed_successfully"
         )
+
+
+def test_local_gateway_reresolves_recreated_services():
+    config = Path("deploy/local/haproxy.cfg").read_text()
+    assert "nameserver docker_dns 127.0.0.11:53" in config
+    for service in ("api:8443", "mosquitto:8883", "postgres:5432"):
+        assert service in config
+    assert config.count("resolvers docker init-addr last,libc,none") == 3
