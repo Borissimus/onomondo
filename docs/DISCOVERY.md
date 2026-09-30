@@ -21,14 +21,15 @@ https://github.com/onomondo/onomondo-eim/blob/master/doc/rest_api.md confirms
 status/outcome separation, but its paths differ from the hosted beta service.
 It is supporting context, not confirmation of the hosted JSON wire schema.
 
-The mock adapter contract is explicitly provisional: inventory is an array of
-objects with `eidValue`; submission uses `eidValue` and
-`order.psmo=[{"listProfileInfo":{}}]`; response carries `resourceId`; outcome is
-an array containing `listProfileInfoResult` with `finalResult` and `profileInfo`.
-Unknown/missing fields fail safely. No claim of authenticated schema capture is
-made. Live API use fails closed unless an operator explicitly sets
-`ONOMONDO_SCHEMA_CONFIRMED=true` after checking this contract against their beta
-docs. Adjust the isolated adapter and fixtures if the hosted shape differs.
+The initial mock contract was provisional. Subsequent user-provided evidence from
+a successful hosted `listProfileInfo` operation confirms that submission uses
+`eidValue` and `order.psmo=[{"listProfileInfo":{}}]`, creation returns
+`resourceId`/`lookup`, and a successful outcome contains
+`listProfileInfoResult.finalResult=successResult` plus `profileInfoList`. The
+adapter and fixtures use that exact field name. Unknown/missing fields still fail
+safely. Live API use remains gated by `ONOMONDO_SCHEMA_CONFIRMED=true`; setting
+the flag is an explicit operator acknowledgement for this read-only contract,
+not authorization for destructive operations.
 
 ## Hardware boundary
 
