@@ -76,3 +76,14 @@ def test_local_gateway_reresolves_recreated_services():
     for service in ("api:8443", "mosquitto:8883", "postgres:5432"):
         assert service in config
     assert config.count("resolvers docker init-addr last,libc,none") == 3
+
+
+def test_live_overlay_keeps_key_backend_only_and_disables_mock_services():
+    config = Path("deploy/local/compose.live.yaml").read_text()
+    assert "name: sgp32-live" in config
+    assert config.count("ONOMONDO_API_KEY_FILE: /run/secrets/onomondo_api_key") == 2
+    assert config.count("ONOMONDO_SCHEMA_CONFIRMED: 'true'") == 2
+    assert config.count("networks: !override [default, edge]") == 2
+    assert config.count("profiles: [mock-only]") == 2
+    agent_block = config.split("  agent-sim:", 1)[1].split("  api:", 1)[0]
+    assert "onomondo_api_key" not in agent_block
