@@ -59,6 +59,27 @@ Back up the protected database, configure encrypted storage/backups, and bound
 journald/container log retention. Runtime DB fields contain necessary EID/ICCID
 values; ordinary logs and MQTT do not.
 
+## Production network layout for borissimus.top
+
+The supplied production Compose file is configured for:
+
+```text
+https://sgp32-api.borissimus.top        -> Caddy :443 -> api:8000
+mqtts://sgp32-mqtt.borissimus.top:8883 -> Mosquitto :8883
+```
+
+Caddy also listens on port 80 only for ACME HTTP challenge and HTTPS redirects.
+FastAPI, PostgreSQL, plaintext MQTT and worker metrics have no published host
+ports. Caddy obtains and renews the public API certificate automatically. The
+MQTT broker uses the private CA/server certificate provisioned under
+`/etc/sgp32/mosquitto-secrets`; clients must validate the exact public MQTT
+hostname against the certificate SAN.
+
+The backend connects to Mosquitto through the Docker DNS alias
+`sgp32-mqtt.borissimus.top`, so the same certificate hostname is validated both
+internally and externally. Do not replace this with `mosquitto` while hostname
+verification is enabled.
+
 ## Confirm the hosted API before live requests
 
 Use the account's authenticated beta docs through the approved secret-loading
