@@ -104,6 +104,7 @@ def test_production_compose_exposes_only_https_and_mqtts():
     caddyfile = Path("deploy/production/Caddyfile").read_text()
     assert "sgp32-api.borissimus.top" in caddyfile
     assert "reverse_proxy api:8000" in caddyfile
+    assert "email off" not in caddyfile
 
 
 def test_production_image_normalizes_source_permissions_for_runtime_user():
