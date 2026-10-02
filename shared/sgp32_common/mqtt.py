@@ -1,3 +1,4 @@
+import logging
 import queue
 import ssl
 import threading
@@ -67,6 +68,7 @@ class MqttBus:
         if will:
             self.client.will_set(will[0], encode(will[1]), qos=1, retain=True)
         self.client.on_connect = self._connect
+        self.client.on_connect_fail = self._connect_fail
         self.client.on_disconnect = self._disconnect
         self.client.on_message = self._message
 
@@ -75,15 +77,25 @@ class MqttBus:
     ) -> None:
         if reason.is_failure:
             self.connected.clear()
+            logging.warning("mqtt_connect_rejected reason=%s", reason)
             return
         for topic in self.subscriptions:
             client.subscribe(topic, qos=1)
         self.connected.set()
+        logging.info("mqtt_connected")
+
+    def _connect_fail(self, client: mqtt.Client, userdata: Any) -> None:
+        self.connected.clear()
+        logging.warning("mqtt_connect_failed")
 
     def _disconnect(
         self, client: mqtt.Client, userdata: Any, flags: Any, reason: Any, properties: Any
     ) -> None:
         self.connected.clear()
+        if reason.is_failure:
+            logging.warning("mqtt_disconnected reason=%s", reason)
+        else:
+            logging.info("mqtt_disconnected")
 
     def _message(self, client: mqtt.Client, userdata: Any, message: mqtt.MQTTMessage) -> None:
         if len(message.payload) > MAX_PAYLOAD:
