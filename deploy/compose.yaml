@@ -1,3 +1,11 @@
+name: sgp32
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: 10m
+    max-file: '5'
+
 x-backend: &backend
   build:
     context: ..
@@ -7,6 +15,7 @@ x-backend: &backend
   tmpfs: [/tmp]
   security_opt: [no-new-privileges:true]
   cap_drop: [ALL]
+  logging: *logging
   env_file: /etc/sgp32/backend.env
   secrets:
     - onomondo_api_key
@@ -23,7 +32,16 @@ x-backend: &backend
 services:
   api:
     <<: *backend
-    ports: ['127.0.0.1:8000:8000']
+    expose: ['8000']
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
   worker:
     <<: *backend
     command: ['sgp32-worker']
@@ -35,6 +53,7 @@ services:
   postgres:
     image: postgres:17
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: sgp32
       POSTGRES_USER: sgp32
@@ -49,6 +68,7 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped
+    logging: *logging
     ports: ['8883:8883']
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
@@ -57,10 +77,31 @@ services:
       - mosquitto-data:/mosquitto/data
     networks:
       default:
-        aliases: [mqtt.example.invalid]
+        aliases: [sgp32-mqtt.borissimus.top]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./production/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    tmpfs: [/tmp]
+    depends_on:
+      api:
+        condition: service_healthy
 volumes:
   postgres-data:
   mosquitto-data:
+  caddy-data:
+  caddy-config:
 secrets:
   onomondo_api_key:
     file: /etc/sgp32/secrets/onomondo_api_key

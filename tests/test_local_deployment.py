@@ -87,3 +87,20 @@ def test_live_overlay_keeps_key_backend_only_and_disables_mock_services():
     assert config.count("profiles: [mock-only]") == 2
     agent_block = config.split("  agent-sim:", 1)[1].split("  api:", 1)[0]
     assert "onomondo_api_key" not in agent_block
+
+
+def test_production_compose_exposes_only_https_and_mqtts():
+    import yaml
+
+    config = yaml.safe_load(Path("deploy/compose.yaml").read_text())
+    services = config["services"]
+    assert services["caddy"]["ports"] == ["80:80", "443:443"]
+    assert services["mosquitto"]["ports"] == ["8883:8883"]
+    for service in ("api", "worker", "postgres"):
+        assert "ports" not in services[service]
+    assert services["api"]["expose"] == ["8000"]
+    aliases = services["mosquitto"]["networks"]["default"]["aliases"]
+    assert aliases == ["sgp32-mqtt.borissimus.top"]
+    caddyfile = Path("deploy/production/Caddyfile").read_text()
+    assert "sgp32-api.borissimus.top" in caddyfile
+    assert "reverse_proxy api:8000" in caddyfile
