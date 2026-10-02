@@ -1,4 +1,7 @@
+import argparse
+import json
 import logging
+import os
 import queue
 import time
 from pathlib import Path
@@ -6,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sgp32_common.messages import envelope, now_iso
 from sgp32_common.mqtt import MqttBus, MqttSettings
@@ -27,6 +31,52 @@ class AgentSettings(BaseSettings):
     simulate: bool = False
     allow_imsi: bool = False
     telemetry_interval: float = Field(default=60, ge=15)
+
+
+def _settings() -> tuple[AgentSettings, MqttSettings]:
+    agent = AgentSettings()
+    mqtt = MqttSettings()
+    if mqtt.username != agent.device_id:
+        raise ValueError("MQTT identity must match device ID")
+    return agent, mqtt
+
+
+def check(settings: AgentSettings, mqtt_settings: MqttSettings) -> dict[str, Any]:
+    """Validate deployment inputs without connecting or printing secrets."""
+    serial_ready = settings.simulate or (
+        Path(settings.serial_port).exists()
+        and os.access(settings.serial_port, os.R_OK | os.W_OK)
+    )
+    command_parent = settings.command_db.expanduser().resolve().parent
+    state_ready = command_parent.is_dir() and os.access(command_parent, os.W_OK)
+    status = "ready" if serial_ready and state_ready else "not_ready"
+    return {
+        "status": status,
+        "deviceId": settings.device_id,
+        "simulation": settings.simulate,
+        "serialReady": serial_ready,
+        "stateDirectoryReady": state_ready,
+        "mqtt": {
+            "host": mqtt_settings.host,
+            "port": mqtt_settings.port,
+            "identityMatchesDevice": mqtt_settings.username == settings.device_id,
+            "caReadable": mqtt_settings.ca.is_file() and os.access(mqtt_settings.ca, os.R_OK),
+            "credentialLoaded": bool(mqtt_settings.password),
+        },
+    }
+
+
+def diagnostics(settings: AgentSettings) -> dict[str, Any]:
+    """Collect one sanitized local modem observation without MQTT."""
+    transport = SerialTransport(settings.serial_port, settings.baud)
+    modem = ModemDiagnostics(
+        SimulatedModem() if settings.simulate else transport,
+        allow_imsi=settings.allow_imsi,
+    )
+    try:
+        return modem.collect(False)
+    finally:
+        transport.close()
 
 
 def run(settings: AgentSettings, mqtt_settings: MqttSettings) -> None:
@@ -122,12 +172,41 @@ def run(settings: AgentSettings, mqtt_settings: MqttSettings) -> None:
             transport.close()
 
 
-def main() -> None:
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Secure A7670E MQTT device agent")
+    parser.add_argument(
+        "command",
+        choices=("run", "check", "diagnostics"),
+        nargs="?",
+        default="run",
+        help="run the agent, validate deployment, or collect local sanitized diagnostics",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
     configure_logging()
     try:
-        run(AgentSettings(), MqttSettings())
+        command = _parser().parse_args(argv).command
+        if command == "diagnostics":
+            result = diagnostics(AgentSettings())
+            print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+            if result["status"] != "succeeded":
+                raise SystemExit(1)
+            return
+        agent, mqtt = _settings()
+        if command == "check":
+            result = check(agent, mqtt)
+            print(json.dumps(result, separators=(",", ":"), sort_keys=True))
+            if result["status"] != "ready":
+                raise SystemExit(1)
+            return
+        run(agent, mqtt)
     except KeyboardInterrupt:
         return
+    except (OSError, PydanticValidationError, ValueError):
+        logging.error("agent_startup_failed")
+        raise SystemExit(2) from None
     except Exception:
         logging.error("agent_stopped_configuration_or_dependency_error")
         raise SystemExit(1) from None

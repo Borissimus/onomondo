@@ -9,9 +9,11 @@ from uuid import uuid4
 
 import pytest
 from sgp32_agent.commands import CommandStore, Dispatcher
+from sgp32_agent.main import AgentSettings, check, diagnostics
 from sgp32_agent.modem import ModemDiagnostics, SimulatedModem
 from sgp32_agent.serial_transport import ModemError, SerialTransport
 from sgp32_common.messages import envelope
+from sgp32_common.mqtt import MqttSettings
 
 
 class CountingModem(ModemDiagnostics):
@@ -206,3 +208,43 @@ def test_pty_diagnostics():
     finally:
         transport.close()
         pseudo.close()
+
+
+def test_deployment_check_reports_only_non_secret_state(tmp_path):
+    ca = tmp_path / "ca.crt"
+    ca.write_text("public-ca")
+    secret = tmp_path / "mqtt-password"
+    secret.write_text("unique-device-secret")
+    state = tmp_path / "state"
+    state.mkdir()
+    agent = AgentSettings(
+        device_id="device-b",
+        simulate=True,
+        command_db=state / "commands.db",
+    )
+    mqtt = MqttSettings(
+        host="sgp32-mqtt.example",
+        ca=ca,
+        username="device-b",
+        password_file=secret,
+    )
+
+    result = check(agent, mqtt)
+
+    assert result["status"] == "ready"
+    assert result["mqtt"]["credentialLoaded"] is True
+    assert "unique-device-secret" not in json.dumps(result)
+
+
+def test_one_shot_diagnostics_uses_same_sanitized_contract(tmp_path):
+    result = diagnostics(
+        AgentSettings(
+            device_id="device-b",
+            simulate=True,
+            command_db=tmp_path / "commands.db",
+        )
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["registration"] == "registered_roaming"
+    assert result["identifiers"] == {"iccid": "[REDACTED]", "imsi": "not_collected"}

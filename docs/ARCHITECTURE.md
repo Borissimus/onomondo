@@ -1,5 +1,9 @@
 # Architecture
 
+The production device boundary and MCU portability rules are documented in
+[`DEVICE_APP.md`](DEVICE_APP.md). The hosted API and Onomondo credentials remain
+server-side; device implementations conform to the MQTT/JSON contract.
+
 ## Trust boundaries
 
 ```text
@@ -79,4 +83,3 @@ The MCU port should preserve the following interfaces:
 
 Python-specific HTTP, ORM and VPS code must not leak into device-agent domain
 logic. The MCU never receives the Onomondo API key.
-
