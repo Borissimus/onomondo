@@ -87,3 +87,29 @@ SM-DP+, raw APDU or SIM Toolkit reply operation was performed.
 This confirms the full hosted read-only control path through Onomondo eIM and the
 IPAe/eUICC. Device-agent MQTT still used the Mac network path; PPP/modem-carried
 MQTTS remains a separate unproven transport milestone.
+
+## Modem-native MQTTS validation — 2026-10-05
+
+The production broker CA was regenerated with strict CA extensions after Python
+correctly rejected the original certificate for missing `keyCertSign`. The
+A7670E firmware reported support for the required `CMQTT*`, `CSSLCFG` and
+`CCERTDOWN` commands. The agent was then started with
+`AGENT_NETWORK_TRANSPORT=modem`; host PPP and host MQTT were not used.
+
+Observed sanitized result:
+
+```text
+A7670E firmware -> A011B07A7670M7_F
+modem TLS/MQTT -> connected to sgp32-mqtt.borissimus.top:8883
+VPS presence -> device-b data_connected
+periodic UART telemetry -> succeeded, registered_roaming, packetAttached=true, CSQ 28
+VPS diagnostics command -> de569cb2-5117-47c1-93a0-fd826a564105
+modem-carried command/result -> succeeded, registered_roaming, packetAttached=true
+```
+
+The command was created in the protected backend for transport validation,
+published by the worker, received through the modem-native subscribed topic,
+executed over the same serialized UART and returned through modem-native MQTTS.
+The backend persisted the correlated result. No identifier or credential is
+included in this evidence. This proves bidirectional application traffic through
+the Onomondo SIM data path without relying on the Mac network transport.

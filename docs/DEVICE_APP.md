@@ -38,6 +38,7 @@ AGENT_COMMAND_DB=/var/lib/sgp32-agent/commands.db
 AGENT_SIMULATE=false
 AGENT_ALLOW_IMSI=false
 AGENT_TELEMETRY_INTERVAL=60
+AGENT_NETWORK_TRANSPORT=host
 MQTT_HOST=sgp32-mqtt.borissimus.top
 MQTT_PORT=8883
 MQTT_CA=/etc/sgp32-agent/ca.crt
@@ -54,6 +55,13 @@ translated by the worker into a bounded MQTT command; the application executes
 the fixed read-only AT sequence and returns the normalized result. SGP.32 profile
 orders remain entirely on the VPS/Onomondo path; the device app only receives an
 informational operation-status message.
+
+Set `AGENT_NETWORK_TRANSPORT=modem` to use the A7670E native TLS/MQTT stack over
+the SIM data session. The UART adapter uploads the public private-CA certificate,
+enables TLS 1.2, server authentication and SNI, then uses the same topics and JSON
+contract as host networking. Host and modem transports are mutually exclusive;
+the modem adapter shares and serializes the UART with diagnostics. This is the
+reference path for an MCU port because it requires no PPP or host IP stack.
 
 ## Portable boundary
 

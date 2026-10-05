@@ -11,6 +11,7 @@ import pytest
 from sgp32_agent.commands import CommandStore, Dispatcher
 from sgp32_agent.main import AgentSettings, check, diagnostics
 from sgp32_agent.modem import ModemDiagnostics, SimulatedModem
+from sgp32_agent.modem_mqtt import ModemMqttBus
 from sgp32_agent.serial_transport import ModemError, SerialTransport
 from sgp32_common.messages import envelope
 from sgp32_common.mqtt import MqttSettings
@@ -248,3 +249,67 @@ def test_one_shot_diagnostics_uses_same_sanitized_contract(tmp_path):
     assert result["status"] == "succeeded"
     assert result["registration"] == "registered_roaming"
     assert result["identifiers"] == {"iccid": "[REDACTED]", "imsi": "not_collected"}
+
+
+class NativeMqttTransport:
+    def __init__(self):
+        self.bus = None
+        self.commands = []
+        self.data = []
+
+    def send_command(self, command, *, timeout=5, prefix=None):
+        self.commands.append(command)
+        result = next(
+            (
+                value
+                for marker, value in (
+                    ("AT+CMQTTSTART", "+CMQTTSTART: 0"),
+                    ("AT+CMQTTCONNECT", "+CMQTTCONNECT: 0,0"),
+                    ("AT+CMQTTSUB=", "+CMQTTSUB: 0,0"),
+                    ("AT+CMQTTPUB=", "+CMQTTPUB: 0,0"),
+                )
+                if command.startswith(marker)
+            ),
+            None,
+        )
+        if result:
+            self.bus.handle_urc(result)
+        return []
+
+    def send_data_command(self, command, data, *, timeout=15):
+        self.data.append((command, data))
+        return []
+
+
+def test_modem_native_mqtt_uses_tls_contract_and_receives_command(tmp_path):
+    ca = tmp_path / "ca.crt"
+    ca.write_text("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n")
+    transport = NativeMqttTransport()
+    settings = MqttSettings(
+        host="sgp32-mqtt.example",
+        port=8883,
+        ca=ca,
+        username="device-b",
+        password="unique-device-secret",
+    )
+    bus = ModemMqttBus(transport, settings, "agent-device-b")
+    transport.bus = bus
+    bus.subscribe("devices/device-b/commands")
+
+    bus._connect()
+    bus.publish("devices/device-b/status", {"state": "online"}, retain=True)
+
+    assert bus.connected.is_set()
+    assert 'AT+CSSLCFG="authmode",0,1' in transport.commands
+    assert 'AT+CSSLCFG="enableSNI",0,1' in transport.commands
+    assert any(command.startswith("AT+CMQTTCONNECT=0,") for command in transport.commands)
+    assert any(command.startswith("AT+CMQTTSUBTOPIC=0,") for command, _ in transport.data)
+    assert any(command.startswith("AT+CMQTTPAYLOAD=0,") for command, _ in transport.data)
+
+    bus.handle_urc("+CMQTTRXSTART: 0,25,2")
+    bus.handle_urc("+CMQTTRXTOPIC: 0,25")
+    bus.handle_urc("devices/device-b/commands")
+    bus.handle_urc("+CMQTTRXPAYLOAD: 0,2")
+    bus.handle_urc("{}")
+    bus.handle_urc("+CMQTTRXEND: 0")
+    assert bus.inbox.get_nowait() == ("devices/device-b/commands", b"{}", False)

@@ -64,8 +64,18 @@ connectivity but does not perform an SGP.32 profile operation.
 
 Do not use a local-only broker for the cellular proof; its address must be
 reachable from the modem's data network. Do not silently fall back to Wi-Fi.
-For modem-native MQTT in a later port, implement the shared MessageBus interface;
-no native MQTT AT implementation is supplied or implied here.
+## Modem-native MQTT transport
+
+Set `AGENT_NETWORK_TRANSPORT=modem` to use the implemented A76XX native MQTT/TLS
+adapter. It uploads the deployment CA with `CCERTDOWN`, enforces TLS 1.2, server
+authentication and SNI, and executes `CMQTT*` operations over the same serialized
+UART used for diagnostics. No PPP interface or host route is involved. The
+adapter uses bounded JSON payloads and never exposes a remote raw-AT interface.
+
+Validate a new firmware revision with the `=?` forms of `CMQTTACCQ`,
+`CMQTTCONNECT`, `CMQTTSSLCFG`, `CMQTTSUBTOPIC`, `CMQTTSUB`, `CMQTTTOPIC`,
+`CMQTTPAYLOAD`, `CMQTTPUB`, `CSSLCFG` and `CCERTDOWN` before enabling it. The
+tested firmware is recorded in `docs/evidence/HARDWARE.md`.
 
 ## Live read-only Onomondo proof
 

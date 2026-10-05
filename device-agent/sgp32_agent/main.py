@@ -5,7 +5,7 @@ import os
 import queue
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import Field
@@ -17,6 +17,7 @@ from sgp32_common.security import configure_logging
 
 from sgp32_agent.commands import CommandStore, Dispatcher
 from sgp32_agent.modem import ModemDiagnostics, SimulatedModem
+from sgp32_agent.modem_mqtt import ModemMqttBus
 from sgp32_agent.serial_transport import SerialTransport
 
 
@@ -31,6 +32,7 @@ class AgentSettings(BaseSettings):
     simulate: bool = False
     allow_imsi: bool = False
     telemetry_interval: float = Field(default=60, ge=15)
+    network_transport: Literal["host", "modem"] = "host"
 
 
 def _settings() -> tuple[AgentSettings, MqttSettings]:
@@ -54,6 +56,7 @@ def check(settings: AgentSettings, mqtt_settings: MqttSettings) -> dict[str, Any
         "status": status,
         "deviceId": settings.device_id,
         "simulation": settings.simulate,
+        "networkTransport": settings.network_transport,
         "serialReady": serial_ready,
         "stateDirectoryReady": state_ready,
         "mqtt": {
@@ -90,16 +93,32 @@ def run(settings: AgentSettings, mqtt_settings: MqttSettings) -> None:
         "timestamp": now_iso(),
     }
     root = f"devices/{settings.device_id}"
-    bus = MqttBus(mqtt_settings, "agent-" + settings.device_id, (root + "/status", presence))
     urcs: queue.Queue[str] = queue.Queue(maxsize=128)
+    modem_bus: ModemMqttBus | None = None
 
     def urc(line: str) -> None:
+        if modem_bus is not None:
+            modem_bus.handle_urc(line)
+            return
         try:
             urcs.put_nowait(line)
         except queue.Full:
             pass
 
     transport = SerialTransport(settings.serial_port, settings.baud, urc)
+    if settings.network_transport == "modem":
+        if settings.simulate:
+            raise ValueError("modem transport cannot be simulated")
+        modem_bus = ModemMqttBus(
+            transport,
+            mqtt_settings,
+            "agent-" + settings.device_id,
+            (root + "/status", presence),
+            on_urc=lambda line: urcs.put_nowait(line) if not urcs.full() else None,
+        )
+        bus: MqttBus | ModemMqttBus = modem_bus
+    else:
+        bus = MqttBus(mqtt_settings, "agent-" + settings.device_id, (root + "/status", presence))
     modem = ModemDiagnostics(
         SimulatedModem() if settings.simulate else transport, allow_imsi=settings.allow_imsi
     )

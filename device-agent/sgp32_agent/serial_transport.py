@@ -13,6 +13,7 @@ URC_PREFIXES = (
     "+CGREG:",
     "+CGEV:",
     "+MSTK:",
+    "+CMQTT",
     "+CMTI:",
     "+CPIN:",
     "RDY",
@@ -46,6 +47,8 @@ class SerialTransport:
         self._stop = threading.Event()
         self._quarantine_until = 0.0
         self._awaiting_final = False
+        self._expect_prompt = False
+        self._prompt = threading.Event()
 
     def connect(self) -> None:
         if self._awaiting_final:
@@ -74,6 +77,12 @@ class SerialTransport:
                 buffer.extend(chunk)
                 if len(buffer) > 8192:
                     raise ModemError("serial_line_limit")
+                with self._state_lock:
+                    expect_prompt = self._expect_prompt
+                if expect_prompt and b">" in buffer:
+                    _, _, rest = buffer.partition(b">")
+                    buffer = bytearray(rest.lstrip(b" "))
+                    self._prompt.set()
                 while b"\n" in buffer:
                     raw, _, rest = buffer.partition(b"\n")
                     buffer = bytearray(rest)
@@ -171,6 +180,59 @@ class SerialTransport:
                     self.close()
                     # Discard late replies before reopening; commands are not pipelined.
                     self._quarantine_until = time.monotonic() + max(2, timeout)
+
+    def send_data_command(self, command: str, data: bytes, *, timeout: float = 15) -> list[str]:
+        """Send a length-delimited SIMCom command that prompts before accepting data."""
+        if not command.startswith("AT") or not data or len(data) > 10240:
+            raise ModemError("invalid_local_command")
+        with self._command_lock:
+            self.connect()
+            responses: queue.Queue[str] = queue.Queue(maxsize=256)
+            self._prompt.clear()
+            with self._state_lock:
+                self._responses, self._prefix = responses, None
+                self._expect_prompt = True
+            failed = False
+            try:
+                assert self._serial
+                self._serial.write((command + "\r").encode("ascii"))
+                deadline = time.monotonic() + timeout
+                while not self._prompt.wait(timeout=0.05):
+                    while not responses.empty():
+                        line = responses.get_nowait()
+                        if line == "ERROR" or line.startswith(("+CME ERROR:", "+CMS ERROR:")):
+                            raise ModemError("at_error")
+                    if time.monotonic() >= deadline:
+                        failed = True
+                        raise ModemError("at_prompt_timeout")
+                with self._state_lock:
+                    self._expect_prompt = False
+                self._serial.write(data)
+                rows: list[str] = []
+                while True:
+                    try:
+                        line = responses.get(timeout=max(0.001, deadline - time.monotonic()))
+                    except queue.Empty:
+                        failed = True
+                        raise ModemError("at_timeout") from None
+                    if line == "OK":
+                        return rows
+                    if line == "ERROR" or line.startswith(("+CME ERROR:", "+CMS ERROR:")):
+                        raise ModemError("at_error")
+                    if line == "__DISCONNECTED__":
+                        failed = True
+                        raise ModemError("serial_disconnected")
+                    rows.append(line)
+            except (OSError, serial.SerialException):
+                failed = True
+                raise ModemError("serial_disconnected") from None
+            finally:
+                with self._state_lock:
+                    self._responses, self._prefix = None, None
+                    self._expect_prompt = False
+                self._prompt.clear()
+                if failed:
+                    self.close()
 
     def close(self) -> None:
         self._stop.set()
