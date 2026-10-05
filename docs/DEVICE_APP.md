@@ -95,5 +95,20 @@ the Onomondo key.
 An MCU port is conformant when the existing MQTT integration and command-contract
 test vectors pass against it, followed by the same hosted `device-b` end-to-end
 test. Cellular routing is a separate transport proof: the Linux reference may use
-host networking, PPP or a future modem-native MQTT adapter without changing the
-application contract.
+host networking, PPP or the implemented modem-native MQTT adapter without
+changing the application contract.
+
+## Safe hosted SGP.32 acceptance test
+
+From a trusted operator PC, run the fail-closed read-only test with:
+
+```sh
+.venv/bin/python tools/sgp32_readonly_test.py \
+  --eid 89033085000000000000000000876379
+```
+
+The password is read interactively and never placed in process arguments. The
+tool permits only readiness, inventory sync/read, profile refresh
+(`listProfileInfo`), operation polling and profile read endpoints. It contains no
+download, enable, disable, delete, raw APDU or eIM configuration operation. EID
+and ICCID values are masked in its output.
