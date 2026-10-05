@@ -34,7 +34,7 @@ class ReadOnlySgp32Test:
         *,
         expected_count: int = 5,
         poll_interval: float = 15,
-        timeout: float = 600,
+        timeout: float = 1800,
         sleep: Callable[[float], None] = time.sleep,
         output: Callable[[str], None] = print,
     ):
@@ -71,30 +71,37 @@ class ReadOnlySgp32Test:
             raise ReadOnlyTestFailure("unexpected_response_shape")
         return payload
 
-    def run(self) -> dict[str, Any]:
+    def run(self, operation_id: str | None = None) -> dict[str, Any]:
         ready = self._request("GET", "/api/v1/health/ready")
         if ready.get("status") != "ready":
             raise ReadOnlyTestFailure("service_not_ready")
         self.output("health: ready")
 
-        sync = self._request("POST", "/api/v1/euiccs/sync", idempotent=True)
-        if sync.get("count") != self.expected_count:
-            raise ReadOnlyTestFailure("unexpected_euicc_count")
-        inventory = self._request("GET", "/api/v1/euiccs?limit=50&offset=0")
-        items = inventory.get("items")
-        if not isinstance(items, list) or self.eid not in {item.get("eid") for item in items}:
-            raise ReadOnlyTestFailure("target_eid_missing")
-        self.output(f"inventory: {len(items)} eUICCs; target {masked(self.eid)} present")
+        if operation_id is None:
+            sync = self._request("POST", "/api/v1/euiccs/sync", idempotent=True)
+            if sync.get("count") != self.expected_count:
+                raise ReadOnlyTestFailure("unexpected_euicc_count")
+            inventory = self._request("GET", "/api/v1/euiccs?limit=50&offset=0")
+            items = inventory.get("items")
+            if not isinstance(items, list) or self.eid not in {item.get("eid") for item in items}:
+                raise ReadOnlyTestFailure("target_eid_missing")
+            self.output(f"inventory: {len(items)} eUICCs; target {masked(self.eid)} present")
 
-        created = self._request(
-            "POST", f"/api/v1/euiccs/{self.eid}/profiles/refresh", idempotent=True
-        )
-        operation_id = created.get("operationId")
-        try:
-            UUID(str(operation_id))
-        except ValueError:
-            raise ReadOnlyTestFailure("invalid_operation_id") from None
-        self.output(f"operation: {operation_id} created")
+            created = self._request(
+                "POST", f"/api/v1/euiccs/{self.eid}/profiles/refresh", idempotent=True
+            )
+            operation_id = created.get("operationId")
+            try:
+                UUID(str(operation_id))
+            except ValueError:
+                raise ReadOnlyTestFailure("invalid_operation_id") from None
+            self.output(f"operation: {operation_id} created")
+        else:
+            try:
+                UUID(operation_id)
+            except ValueError:
+                raise ReadOnlyTestFailure("invalid_operation_id") from None
+            self.output(f"operation: {operation_id} resumed; no order submitted")
 
         deadline = time.monotonic() + self.timeout
         previous = None
@@ -111,7 +118,7 @@ class ReadOnlySgp32Test:
                 raise ReadOnlyTestFailure("unknown_operation_state")
             self.sleep(self.poll_interval)
         else:
-            raise ReadOnlyTestFailure("local_poll_timeout")
+            raise ReadOnlyTestFailure(f"local_poll_timeout operation={operation_id}")
 
         if operation.get("state") != "succeeded":
             error = operation.get("error") or operation.get("state")
@@ -152,7 +159,11 @@ def parser() -> argparse.ArgumentParser:
     value.add_argument("--username", default="admin")
     value.add_argument("--expected-count", type=int, default=5)
     value.add_argument("--poll-interval", type=float, default=15)
-    value.add_argument("--timeout", type=float, default=600)
+    value.add_argument("--timeout", type=float, default=1800)
+    value.add_argument(
+        "--operation-id",
+        help="resume polling an existing operation without synchronizing or submitting an order",
+    )
     return value
 
 
@@ -173,7 +184,7 @@ def main(argv: list[str] | None = None) -> None:
                 expected_count=args.expected_count,
                 poll_interval=args.poll_interval,
                 timeout=args.timeout,
-            ).run()
+            ).run(args.operation_id)
     except (httpx.HTTPError, ReadOnlyTestFailure, ValueError) as exc:
         print(f"FAILED: {exc}", file=sys.stderr)
         raise SystemExit(1) from None

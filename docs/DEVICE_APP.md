@@ -112,3 +112,13 @@ tool permits only readiness, inventory sync/read, profile refresh
 (`listProfileInfo`), operation polling and profile read endpoints. It contains no
 download, enable, disable, delete, raw APDU or eIM configuration operation. EID
 and ICCID values are masked in its output.
+
+The default polling timeout is 30 minutes, matching the backend order deadline.
+If a local terminal is interrupted or an older client times out while the order
+is still active, resume without creating another order:
+
+```sh
+.venv/bin/python tools/sgp32_readonly_test.py \
+  --eid 89033085000000000000000000876379 \
+  --operation-id <existing-operation-uuid>
+```
