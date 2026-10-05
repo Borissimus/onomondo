@@ -41,6 +41,16 @@ a unique user/password. Each user needs an explicit ACL block for its device ID.
 Use the provided backend ACL only for the backend identity. Do not add device
 wildcard permissions. Broker secrets live in `/etc/sgp32/mosquitto-secrets/`.
 
+The private MQTT CA must be a standards-compliant CA certificate, not merely a
+self-signed leaf. Its X.509 extensions must include
+`basicConstraints=critical,CA:TRUE` and
+`keyUsage=critical,keyCertSign,cRLSign`. The broker leaf must include
+`basicConstraints=critical,CA:FALSE`, `extendedKeyUsage=serverAuth` and a SAN for
+the exact MQTT hostname. Validate the chain with `openssl verify -x509_strict`;
+Python/OpenSSL intentionally rejects a CA without the key-signing usage even if
+some `openssl s_client` versions accept it. Recreate API and worker containers
+after atomically replacing a bind-mounted CA file so they mount the new inode.
+
 ```sh
 docker compose -f deploy/compose.yaml build
 docker compose -f deploy/compose.yaml run --rm migrate
